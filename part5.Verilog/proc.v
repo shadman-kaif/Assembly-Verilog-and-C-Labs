@@ -1,4 +1,3 @@
-//... use your processor code from Part III, and add support for b{cond}
 module proc(DIN, Resetn, Clock, Run, DOUT, ADDR, W);
     input [15:0] DIN;
     input Resetn, Clock, Run;
@@ -19,7 +18,9 @@ module proc(DIN, Resetn, Clock, Run, DOUT, ADDR, W);
     wire [15:0] IR;
     reg pc_inc, W_D;
     wire IMM;
-   
+	 reg c;
+	 reg z;
+	 reg [16:0] sum_alu;
     assign III = IR[15:13];
     assign IMM = IR[12];
     assign rX = IR[11:9];
@@ -66,12 +67,12 @@ module proc(DIN, Resetn, Clock, Run, DOUT, ADDR, W);
     *  110 0: and  rX,rY    rX <- rX & rY
     *  110 1: and  rX,#D    rX <- rX & D */
     parameter mv = 3'b000, mvt = 3'b001, add = 3'b010, sub = 3'b011, ld = 3'b100, st = 3'b101,
-	     and_ = 3'b110;
+	     and_ = 3'b110, b = 3'b111;
     // selectors for the BusWires multiplexer
     parameter Sel_R0 = 4'b0000, Sel_R1 = 4'b0001, Sel_R2 = 4'b0010, Sel_R3 = 4'b0011,
         Sel_R4 = 4'b0100, Sel_R5 = 4'b0101, Sel_R6 = 4'b0110, Sel_PC = 4'b0111, Sel_G = 4'b1000,
         Sel_D /* immediate data */ = 4'b1001, Sel_D8 /* immediate data << 8 */ = 4'b1010, 
-        Sel_DIN /* data-in from memory */ = 4'b1011;
+        Sel_DIN /* data-in from memory */ = 4'b1011, none = 3'b000, eq = 3'b001, ne = 3'b010, cc = 3'b011, cs = 3'b100;
     // Control FSM outputs
     always @(*) begin
         // default values for control signals
@@ -97,51 +98,91 @@ module proc(DIN, Resetn, Clock, Run, DOUT, ADDR, W);
                     end
                     mvt: begin
                         // ... your code goes here
-			Sel = Sel_D8;
-			Rin = Xreg;
-			Done = 1'b1;
+								Sel = Sel_D8;
+								Rin = Xreg;
+								Done = 1'b1;
                     end
                     add, sub, and_: begin
                         // ... your code goes here
-			Sel = rX;
-			Ain = 1'b1;
+								Sel = rX;
+								Ain = 1'b1;
                     end
                     ld, st: begin
                         // ... your code goes here
-			Sel = rY;
-			ADDRin = 1'b1;
-                    end
+								Sel = rY;
+								ADDRin = 1;
+						  end
+						  b: begin
+							case(rX)
+								none: begin
+									Sel = Sel_D;
+									Rin = 8'b00000001;
+									Done = 1;
+								end
+								eq: begin
+									if(z) begin
+										Sel = Sel_D;
+										Rin = 8'b00000001;
+									end
+									Done = 1'b1;
+								end
+								ne: begin
+									if(!z) begin
+										Sel = Sel_D;
+										Rin = 8'b00000001;
+									end
+									Done = 1'b1;								
+								end
+								cc: begin
+									if(!c) begin
+										Sel = Sel_D;
+										Rin = 8'b00000001;
+									end
+									Done = 1'b1;								
+								end
+								cs: begin
+									if(c) begin
+										Sel = Sel_D;
+										Rin = 8'b00000001;
+									end
+									Done = 1'b1;								
+								end
+						   endcase
+						  end
                     default: ;
                 endcase
             T4: // define signals T2
                 case (III)
                     add: begin
                         // ... your code goes here
-			if (!IMM) Sel = rY; 
-			else Sel = Sel_D; 
-			Gin = 1'b1;
+								if(!IMM) Sel = rY;
+								else Sel = Sel_D;
+								AddSub = 1'b0;
+								Gin = 1'b1;
+								if(sum_alu > 17'b01111111111111111) c <= 1;
+								else c <= 0;								
                     end
                     sub: begin
                         // ... your code goes here
-			if (!IMM) Sel = rY; 
-			else Sel = Sel_D; 
-			AddSub = 1'b1;
-			Gin = 1'b1;
+								if(!IMM) Sel = rY;
+								else Sel = Sel_D;
+								AddSub = 1'b1;
+								Gin = 1'b1;
                     end
                     and_: begin
                         // ... your code goes here
-			if (!IMM) Sel = rY; 
-			else Sel = Sel_D; 
-			ALUand = 1'b1;
-			Gin = 1'b1;
+								ALUand = 1'b1;
+								if(!IMM) Sel = rY;
+								else Sel = Sel_D;
+								Gin = 1'b1;
                     end
                     ld: // wait cycle for synchronous memory
                         ;
                     st: begin
                         // ... your code goes here
-			Sel = rX;
-			DOUTin = 1'b1;
-			W_D = 1'b1;
+								Sel = rX;
+								DOUTin = 1'b1;
+								W_D = 1'b1;
                     end
                     default: ; 
                 endcase
@@ -149,19 +190,20 @@ module proc(DIN, Resetn, Clock, Run, DOUT, ADDR, W);
                 case (III)
                     add, sub, and_: begin
                         // ... your code goes here
-			Sel = Sel_G;
-			Rin = Xreg;
-			Done = 1'b1;
+								Sel = Sel_G;
+								Rin = Xreg;
+								Done = 1'b1;
                     end
                     ld: begin
                         // ... your code goes here
-			Sel = DIN;
-			Rin = Xreg;
-			Done = 1'b1;
+								Sel = Sel_DIN;
+								Rin = Xreg;
+								Done = 1'b1;
+								
                     end
                     st: // wait cycle for synhronous memory
                         // ... your code goes here
-			Done = 1'b1;
+								Done = 1'b1;
                     default: ;
                 endcase
             default: ;
@@ -195,16 +237,27 @@ module proc(DIN, Resetn, Clock, Run, DOUT, ADDR, W);
     flipflop reg_W (W_D, Resetn, Clock, W);
     
     // alu
-    always @(*)
+    always @(*) begin
         if (!ALUand)
-            if (!AddSub)
+            if (!AddSub) begin
                 Sum = A + BusWires;
-            else
+		sum_alu = A + BusWires;
+				end	 
+            else begin
                 Sum = A - BusWires;
+				end
 		  else
             Sum = A & BusWires;
-    regn reg_G (Sum, Gin, Clock, G);
-
+	 end		
+    
+	 regn reg_G (Sum, Gin, Clock, G);
+	 
+	 always @(*) begin
+			if(G == 16'b0) 
+				z <= 1;
+			else 
+				z <= 0;
+	 end	
     // define the internal processor bus
     always @(*)
         case (Sel)
